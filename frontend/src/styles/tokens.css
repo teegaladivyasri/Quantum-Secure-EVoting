@@ -1,0 +1,126 @@
+/* ==========================================================================
+   DESIGN TOKENS - Quantum-Secure Electronic Voting System
+   Phase 10.5 Visual Theme Experiment:
+   - Midnight Mist: #000000
+   - Silver Slate:  #8C8889
+   - Clouded Pearl: #CFCDD3
+   - Pure Snow:     #FFFFFF
+   - Optional Accent: Soft Gold #C6A75E (Non-dominant)
+   ========================================================================== */
+
+:root {
+  /* Brand Constants - Black + Silver + Pearl White */
+  --color-midnight-mist: #000000;
+  --color-silver-slate: #8C8889;
+  --color-clouded-pearl: #CFCDD3;
+  --color-pure-snow: #FFFFFF;
+
+  /* Optional Non-dominant Accent */
+  --color-soft-gold: #C6A75E;
+  --color-soft-gold-hover: #D4B76E;
+  --color-soft-gold-dim: rgba(198, 167, 94, 0.12);
+
+  /* Status Colors */
+  --color-success: #1B873F;
+  --color-success-bg: rgba(27, 135, 63, 0.12);
+  --color-warning: #C05621;
+  --color-danger: #C53030;
+  --color-danger-bg: rgba(197, 48, 48, 0.12);
+
+  /* Typography */
+  --font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-family-heading: 'Georgia', 'Cambria', 'Times New Roman', serif;
+
+  /* Rounded Card Language */
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 18px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
+  --radius-pill: 9999px;
+  --transition-smooth: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Light Theme (Pure Snow, Clouded Pearl surfaces, Midnight Mist text & accents) */
+[data-theme="light"] {
+  --bg-app: #FFFFFF;
+  --bg-surface: #FFFFFF;
+  --bg-surface-elevated: #F5F4F7;
+  --bg-card: #FFFFFF;
+  --bg-header: rgba(255, 255, 255, 0.96);
+
+  --text-primary: #000000;
+  --text-secondary: #423E3F;
+  --text-muted: #645F61;
+  --text-gold: #000000;
+  --text-silver: #8C8889;
+
+  --border-subtle: #CFCDD3;
+  --border-focus: #000000;
+  --border-glass: #E0DEE4;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.03);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+  --gold-glow: 0 4px 20px rgba(0, 0, 0, 0.08);
+
+  --nav-bg: #FFFFFF;
+  --nav-text: #000000;
+  --nav-border: #CFCDD3;
+
+  --btn-primary-bg: #000000;
+  --btn-primary-text: #FFFFFF;
+  --btn-primary-hover-bg: #222222;
+  --btn-primary-hover-text: #FFFFFF;
+
+  --badge-bg: #F5F4F7;
+  --badge-text: #000000;
+  --badge-border: #CFCDD3;
+
+  --candidate-selected-border: #000000;
+  --candidate-selected-bg: #F5F4F7;
+  --candidate-selected-avatar-bg: #000000;
+  --candidate-selected-avatar-text: #FFFFFF;
+}
+
+/* Dark Theme (Midnight Mist, Subtle Silver-Black surfaces, Pure Snow text) */
+[data-theme="dark"] {
+  --bg-app: #000000;
+  --bg-surface: #0E0E12;
+  --bg-surface-elevated: #18181E;
+  --bg-card: #0E0E12;
+  --bg-header: rgba(0, 0, 0, 0.94);
+
+  --text-primary: #FFFFFF;
+  --text-secondary: #CFCDD3;
+  --text-muted: #8C8889;
+  --text-gold: #FFFFFF;
+  --text-silver: #8C8889;
+
+  --border-subtle: rgba(140, 136, 137, 0.28);
+  --border-focus: #FFFFFF;
+  --border-glass: rgba(140, 136, 137, 0.22);
+
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.6);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.7);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.85);
+  --gold-glow: 0 0 24px rgba(255, 255, 255, 0.08);
+
+  --nav-bg: #000000;
+  --nav-text: #FFFFFF;
+  --nav-border: rgba(140, 136, 137, 0.28);
+
+  --btn-primary-bg: #FFFFFF;
+  --btn-primary-text: #000000;
+  --btn-primary-hover-bg: #CFCDD3;
+  --btn-primary-hover-text: #000000;
+
+  --badge-bg: #18181E;
+  --badge-text: #FFFFFF;
+  --badge-border: rgba(140, 136, 137, 0.38);
+
+  --candidate-selected-border: #FFFFFF;
+  --candidate-selected-bg: #18181E;
+  --candidate-selected-avatar-bg: #FFFFFF;
+  --candidate-selected-avatar-text: #000000;
+}

@@ -1,0 +1,839 @@
+@import './tokens.css';
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  min-height: 100%;
+  font-family: var(--font-family-base);
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Accessibility Focus States */
+:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+/* App Layout Container */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.main-content {
+  flex: 1;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+/* Rounded Card Language - Institutional Card Surfaces */
+.glass-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: 1.75rem;
+  transition: var(--transition-smooth);
+}
+
+.glass-card:hover {
+  box-shadow: var(--shadow-lg);
+  border-color: var(--color-silver-slate);
+}
+
+/* Typography & Institutional Badges */
+h1, h2, h3, h4 {
+  color: var(--text-primary);
+  font-family: var(--font-family-heading);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+h1 { font-size: 2.25rem; margin-bottom: 0.75rem; }
+h2 { font-size: 1.75rem; margin-bottom: 0.5rem; }
+h3 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+
+.gold-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--badge-bg);
+  border: 1px solid var(--badge-border);
+  color: var(--badge-text);
+  padding: 0.35rem 0.85rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* Buttons (Touch Friendly: Min Height 48px) */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  min-height: 48px;
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: var(--transition-smooth);
+  text-decoration: none;
+  touch-action: manipulation;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Primary High-Contrast Button (Black in Light, White in Dark) */
+.btn-gold {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  border: 1px solid var(--btn-primary-bg);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-gold:hover {
+  background: var(--btn-primary-hover-bg);
+  color: var(--btn-primary-hover-text);
+  border-color: var(--btn-primary-hover-bg);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+/* Secondary Surface Button */
+.btn-navy {
+  background: var(--bg-surface-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+}
+
+.btn-navy:hover {
+  background: var(--bg-surface);
+  border-color: var(--border-focus);
+  transform: translateY(-1px);
+}
+
+/* Clean Outline Button with Silver Border */
+.btn-outline {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+}
+
+.btn-outline:hover {
+  border-color: var(--border-focus);
+  color: var(--text-primary);
+  background: var(--bg-surface-elevated);
+}
+
+.btn-danger {
+  background: var(--color-danger);
+  color: #ffffff;
+}
+
+/* Form Controls */
+.form-group {
+  margin-bottom: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.form-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.form-control {
+  min-height: 48px;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 1rem;
+  transition: var(--transition-smooth);
+}
+
+.form-control:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px rgba(140, 136, 137, 0.25);
+  outline: none;
+}
+
+/* Alerts */
+.alert {
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-sm);
+  margin-bottom: 1.25rem;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.alert-error {
+  background: var(--color-danger-bg);
+  border: 1px solid var(--color-danger);
+  color: var(--color-danger);
+}
+
+.alert-success {
+  background: var(--color-success-bg);
+  border: 1px solid var(--color-success);
+  color: var(--color-success);
+}
+
+/* Candidate Card Grid */
+.candidate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin: 1.5rem 0;
+}
+
+.candidate-card {
+  position: relative;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1.5rem;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.candidate-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-silver-slate);
+  box-shadow: var(--shadow-md);
+}
+
+.candidate-card.selected {
+  border: 2px solid var(--candidate-selected-border);
+  background: var(--candidate-selected-bg);
+  box-shadow: var(--shadow-md);
+}
+
+.candidate-card:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 3px;
+  border-color: var(--border-focus);
+}
+
+.candidate-radio {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.25rem;
+  width: 22px;
+  height: 22px;
+  accent-color: var(--candidate-selected-border);
+}
+
+/* Tables */
+.table-responsive {
+  overflow-x: auto;
+  margin: 1.5rem 0;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.data-table th {
+  background: var(--bg-surface-elevated);
+  color: var(--text-secondary);
+  font-weight: 600;
+  padding: 0.9rem 1rem;
+  border-bottom: 2px solid var(--border-subtle);
+}
+
+.data-table td {
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.data-table tr:hover td {
+  background: var(--bg-surface-elevated);
+}
+
+/* ==========================================================================
+   Phase 8: Voting Journey Timeline & Landing Enhancements
+   ========================================================================== */
+.voting-journey-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+
+.voting-journey-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(170px, 1fr));
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.journey-card {
+  position: relative;
+  padding: 1.25rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  justifyContent: space-between;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-glass);
+}
+
+.journey-connector-arrow {
+  position: absolute;
+  right: -14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--color-silver-slate);
+  z-index: 2;
+  pointer-events: none;
+}
+
+@media (max-width: 1024px) {
+  .voting-journey-grid {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1.25rem;
+  }
+  .journey-connector-arrow {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .voting-journey-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+}
+
+/* Entrance Animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in-up {
+  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-in-up {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* ==========================================================================
+   PHASE 10.6 — HIGH-END EDITORIAL CIVIC TECHNOLOGY STYLING
+   ========================================================================== */
+
+/* Clean Navbar Text Links */
+.nav-text-link {
+  color: var(--nav-text);
+  text-decoration: none;
+  font-size: 0.92rem;
+  font-weight: 500;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 2px solid transparent;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.nav-text-link:hover {
+  color: var(--text-primary);
+  border-bottom-color: var(--color-silver-slate);
+}
+
+/* Thin Editorial Divider Rules */
+.editorial-rule {
+  width: 100%;
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 1.5rem 0;
+  border: none;
+}
+
+.editorial-rule-dark {
+  width: 100%;
+  height: 1px;
+  background: rgba(140, 136, 137, 0.35);
+  margin: 1.75rem 0;
+  border: none;
+}
+
+/* Editorial Hero Section (No Outer Card) */
+.editorial-hero-wrapper {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 4rem;
+  align-items: center;
+  padding: 3rem 0 2rem;
+}
+
+@media (max-width: 992px) {
+  .editorial-hero-wrapper {
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+    padding: 1.5rem 0;
+  }
+}
+
+.hero-large-headline {
+  font-size: clamp(2.8rem, 6vw, 4.4rem);
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 1.75rem;
+  white-space: pre-line;
+}
+
+/* Abstract Ballot Visual Design Object (No fake political content) */
+.abstract-ballot-object {
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 2.25rem 2rem;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  user-select: none;
+  position: relative;
+  max-width: 360px;
+  margin: 0 auto;
+  transition: border-color 0.3s ease, transform 0.3s ease;
+}
+
+.abstract-ballot-object:hover {
+  border-color: var(--color-silver-slate);
+  transform: translateY(-3px);
+}
+
+.abstract-option-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.abstract-option-circle {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-subtle);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.abstract-option-circle.selected {
+  border-color: var(--text-primary);
+  background: var(--text-primary);
+}
+
+.abstract-option-line {
+  flex: 1;
+  height: 4px;
+  background: var(--border-subtle);
+  border-radius: 2px;
+}
+
+.abstract-option-line.dark {
+  background: var(--color-silver-slate);
+}
+
+/* Section 01 — What Are We Protecting? (Editorial Split Layout) */
+.editorial-section {
+  padding: 3rem 0;
+  position: relative;
+}
+
+.editorial-number-label {
+  font-size: 0.88rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: var(--color-silver-slate);
+  text-transform: uppercase;
+  margin-bottom: 0.75rem;
+}
+
+.editorial-section-title {
+  font-size: clamp(2rem, 4.2vw, 3rem);
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: var(--text-primary);
+  margin-bottom: 1.5rem;
+  white-space: pre-line;
+}
+
+.split-protecting-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3.5rem;
+  margin: 2.5rem 0;
+}
+
+@media (max-width: 768px) {
+  .split-protecting-columns {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+}
+
+.protecting-column-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-primary);
+  padding-bottom: 0.75rem;
+  border-bottom: 1.5px solid var(--text-primary);
+  margin-bottom: 1rem;
+}
+
+.protecting-column-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.65rem 0;
+  font-size: 1.05rem;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* Connected Relational Flow Sequence */
+.relational-flow-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.75rem 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  margin-top: 2rem;
+  overflow-x: auto;
+}
+
+.relational-flow-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.relational-flow-separator {
+  color: var(--color-silver-slate);
+  font-weight: 600;
+  font-size: 1.25rem;
+}
+
+@media (max-width: 768px) {
+  .relational-flow-line {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  .relational-flow-separator {
+    transform: rotate(90deg);
+    margin-left: 0.5rem;
+  }
+}
+
+/* Section 02 — The Central Idea (Full-Width Pure Black Canvas) */
+.fullwidth-dark-canvas {
+  background-color: #000000 !important;
+  color: #FFFFFF !important;
+  border-radius: var(--radius-lg);
+  padding: 4.5rem 3.5rem;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.45);
+}
+
+@media (max-width: 768px) {
+  .fullwidth-dark-canvas {
+    padding: 2.75rem 1.75rem;
+  }
+}
+
+.dark-statement-line {
+  font-size: clamp(2rem, 4.5vw, 3.4rem);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: #FFFFFF !important;
+  white-space: pre-line;
+  margin-bottom: 1.5rem;
+}
+
+.dark-supporting-desc {
+  font-size: 1.1rem;
+  line-height: 1.7;
+  color: #CFCDD3 !important;
+  max-width: 760px;
+  margin-bottom: 3.5rem;
+}
+
+/* Technical Pipeline (Typographic Nodes, No Cards) */
+.technical-pipeline-track {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(140, 136, 137, 0.3);
+}
+
+.pipeline-node {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.pipeline-node-number {
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #8C8889;
+}
+
+.pipeline-node-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #FFFFFF;
+}
+
+.pipeline-node-desc {
+  font-size: 0.84rem;
+  color: #CFCDD3;
+  line-height: 1.45;
+}
+
+/* Section 03 — How A Voter Uses It (Horizontal Editorial Process) */
+.editorial-process-container {
+  padding: 3rem 0;
+}
+
+.editorial-process-track {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1.25rem;
+  position: relative;
+  margin-top: 2.5rem;
+}
+
+@media (max-width: 1024px) {
+  .editorial-process-track {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1.75rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .editorial-process-track {
+    grid-template-columns: 1fr;
+    border-left: 2px solid var(--border-subtle);
+    padding-left: 1.5rem;
+  }
+}
+
+.editorial-process-step {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-top: 1.25rem;
+  border-top: 2px solid var(--border-subtle);
+  transition: border-color 0.25s ease;
+}
+
+.editorial-process-step:hover {
+  border-top-color: var(--text-primary);
+}
+
+@media (max-width: 600px) {
+  .editorial-process-step {
+    border-top: none;
+    padding-top: 0;
+    margin-bottom: 1.5rem;
+  }
+}
+
+.step-big-number {
+  font-size: 2.4rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--color-silver-slate);
+}
+
+.editorial-process-step:hover .step-big-number {
+  color: var(--text-primary);
+}
+
+.step-short-label {
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-primary);
+  text-transform: uppercase;
+}
+
+.step-short-hint {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+/* Section 04 — Security Behind the Vote (Mixed Editorial Composition) */
+.security-editorial-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 2rem;
+  border-top: 1.5px solid var(--text-primary);
+}
+
+.security-editorial-row {
+  display: grid;
+  grid-template-columns: 80px 1.2fr 2fr;
+  gap: 2rem;
+  align-items: baseline;
+  padding: 1.75rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background-color 0.2s ease;
+}
+
+@media (max-width: 860px) {
+  .security-editorial-row {
+    grid-template-columns: 60px 1fr;
+    gap: 1rem;
+  }
+  .security-editorial-row .sec-desc-col {
+    grid-column: 2 / -1;
+  }
+}
+
+@media (max-width: 540px) {
+  .security-editorial-row {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+}
+
+.sec-num-col {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--color-silver-slate);
+}
+
+.sec-title-col {
+  font-size: 1.18rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.sec-desc-col {
+  font-size: 0.98rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+/* Academic Status Identity Banner */
+.academic-identity-banner {
+  padding: 2.25rem 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+}
+
+.academic-badge-label {
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--text-primary);
+  text-transform: uppercase;
+}
+
+.academic-disclaimer-text {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  max-width: 680px;
+  line-height: 1.6;
+}
+
+/* Final Monumental CTA Statement */
+.final-cta-monumental {
+  padding: 5rem 0 3rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+}
+
+.monumental-statement {
+  font-size: clamp(2.4rem, 5vw, 3.8rem);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  color: var(--text-primary);
+  white-space: pre-line;
+  max-width: 900px;
+}
+
+
+
