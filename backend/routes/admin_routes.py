@@ -8,6 +8,7 @@ from backend.models.candidate import Candidate
 from backend.models.constituency import Constituency
 from backend.models.election_constituency import ElectionConstituency
 from backend.models.participation import ParticipationRecord
+from backend.models.ballot import Ballot
 from backend.models.audit import AuditLog
 from backend.services.audit_service import log_audit_event
 from backend.middleware.auth_guard import require_role
@@ -64,7 +65,7 @@ def create_constituency():
     data = request.get_json() or {}
     name = data.get("name", "").strip()
     code = data.get("code", "").strip()
-    state = data.get("state", "Example State").strip()
+    state = data.get("state", "Andhra Pradesh").strip()
 
     if not name or not code:
         return jsonify({"error": "VALIDATION_ERROR", "message": "Name and code are required."}), 400
@@ -85,6 +86,66 @@ def create_constituency():
     return jsonify({"message": "Constituency created.", "constituency": constituency.to_dict()}), 201
 
 # 3. ELECTION MANAGEMENT
+def validate_election_for_publish(election: Election) -> tuple[bool, str | None]:
+    """
+    Authoritative backend validation ensuring election is fully configured before publishing.
+    Verifies:
+    1. Valid election details.
+    2. At least one participating constituency.
+    3. Every participating constituency has configured standard candidates.
+    4. Each candidate has valid name, party, and ballot position (> 0).
+    5. No duplicate candidates or ballot positions within the same constituency.
+    6. Exactly one NOTA option per constituency, strictly positioned last.
+    """
+    if not election.title or not election.title.strip():
+        return False, "Cannot publish election: Election title is required."
+
+    assocs = ElectionConstituency.query.filter_by(election_id=election.id).all()
+    if not assocs:
+        return False, "Cannot advance election: No participating constituencies have been configured."
+
+    for assoc in assocs:
+        cname = assoc.constituency.name if assoc.constituency else assoc.constituency_id
+        cands = Candidate.query.filter_by(election_id=election.id, constituency_id=assoc.constituency_id).all()
+        std_cands = [c for c in cands if not c.is_nota]
+        nota_cands = [c for c in cands if c.is_nota]
+
+        if len(std_cands) == 0:
+            return False, f"Cannot publish election. {cname} has no configured candidates."
+
+        for c in std_cands:
+            if not c.name or not c.name.strip():
+                return False, f"Cannot publish election. A candidate in {cname} is missing a name."
+            if not c.party or not c.party.strip():
+                return False, f"Cannot publish election. Candidate '{c.name}' in {cname} is missing party affiliation."
+            if c.ballot_position is None or c.ballot_position <= 0:
+                return False, f"Cannot publish election. Candidate '{c.name}' in {cname} has an invalid ballot position."
+
+        # Unique names in constituency
+        std_names = [c.name.strip().lower() for c in std_cands]
+        if len(std_names) != len(set(std_names)):
+            return False, f"Cannot publish election. Duplicate candidate found in {cname}."
+
+        # NOTA requirements
+        if len(nota_cands) == 0:
+            return False, f"Cannot publish election. NOTA option is missing for {cname}."
+        if len(nota_cands) > 1:
+            return False, f"Cannot publish election. Multiple NOTA options found for {cname}."
+
+        nota = nota_cands[0]
+        max_std_pos = max(c.ballot_position for c in std_cands)
+        if nota.ballot_position <= max_std_pos:
+            return False, f"Cannot publish election. NOTA must appear as the final ballot option in {cname}."
+
+        # Unique ballot positions in constituency
+        all_positions = [c.ballot_position for c in cands]
+        if len(all_positions) != len(set(all_positions)):
+            return False, f"Cannot publish election. Duplicate ballot positions found in {cname}."
+
+    return True, None
+
+
+# 3. ELECTION MANAGEMENT
 @admin_bp.route("/elections", methods=["POST"])
 @require_role(["ADMIN"])
 def create_election():
@@ -92,11 +153,12 @@ def create_election():
     title = data.get("title", "").strip()
     description = data.get("description", "").strip()
     election_type = data.get("election_type", "State Legislative Assembly").strip()
-    state = data.get("state", "Example State").strip()
+    state = data.get("state", "Andhra Pradesh").strip()
     election_date_str = data.get("election_date")
     voting_open_at_str = data.get("voting_open_at")
     voting_close_at_str = data.get("voting_close_at")
     constituency_ids = data.get("constituency_ids", [])
+    candidates_input = data.get("candidates", [])
 
     if not title:
         return jsonify({"error": "VALIDATION_ERROR", "message": "Election title is required."}), 400
@@ -140,20 +202,49 @@ def create_election():
     db.session.add(election)
     db.session.flush()
 
-    # Link participating constituencies
+    # Map candidate inputs by constituency_id
+    cands_by_const = {cid: [] for cid in constituency_ids}
+    for c_item in candidates_input:
+        cid = c_item.get("constituency_id")
+        if cid in cands_by_const:
+            cands_by_const[cid].append(c_item)
+
+    # Link participating constituencies and provision candidates
     for cid in constituency_ids:
         const = Constituency.query.filter_by(id=cid).first()
         if const:
             assoc = ElectionConstituency(election_id=election.id, constituency_id=const.id)
             db.session.add(assoc)
-            # Ensure NOTA option is auto-provisioned
+
+            c_list = cands_by_const.get(cid, [])
+            c_list_sorted = sorted(c_list, key=lambda x: x.get("ballot_position", 9999))
+            for idx, c_data in enumerate(c_list_sorted, start=1):
+                pos = int(c_data.get("ballot_position")) if c_data.get("ballot_position") else idx
+                cand = Candidate(
+                    election_id=election.id,
+                    constituency_id=const.id,
+                    constituency=const.name,
+                    name=c_data["name"].strip(),
+                    party=c_data["party"].strip(),
+                    ballot_position=pos,
+                    is_active=True,
+                    is_nota=False
+                )
+                db.session.add(cand)
+
+            db.session.flush()
+
+            max_pos = db.session.query(func.coalesce(func.max(Candidate.ballot_position), 0))\
+                .filter_by(election_id=election.id, constituency_id=const.id, is_nota=False).scalar()
+
+            # Ensure NOTA option is auto-provisioned and placed strictly last
             nota_candidate = Candidate(
                 election_id=election.id,
                 constituency_id=const.id,
                 constituency=const.name,
                 name="None of the Above (NOTA)",
                 party="NOTA",
-                ballot_position=999,
+                ballot_position=max_pos + 1 if max_pos > 0 else 1,
                 is_active=True,
                 is_nota=True
             )
@@ -223,6 +314,28 @@ def update_election(election_id):
     db.session.commit()
     return jsonify({"message": "Election updated.", "election": election.to_dict()}), 200
 
+@admin_bp.route("/elections/<string:election_id>", methods=["DELETE"])
+@require_role(["ADMIN"])
+def delete_election(election_id):
+    election = Election.query.filter_by(id=election_id).first()
+    if not election:
+        return jsonify({"error": "NOT_FOUND", "message": "Election not found."}), 404
+
+    title = election.title
+    Ballot.query.filter_by(election_id=election_id).delete(synchronize_session=False)
+    ParticipationRecord.query.filter_by(election_id=election_id).delete(synchronize_session=False)
+    Candidate.query.filter_by(election_id=election_id).delete(synchronize_session=False)
+    ElectionConstituency.query.filter_by(election_id=election_id).delete(synchronize_session=False)
+    db.session.delete(election)
+
+    log_audit_event(
+        "ELECTION_DELETED",
+        user_id=g.current_user["id"],
+        details={"election_id": election_id, "title": title}
+    )
+    db.session.commit()
+    return jsonify({"message": f"Election '{title}' and all associated records deleted successfully."}), 200
+
 @admin_bp.route("/elections/<string:election_id>/status", methods=["PATCH"])
 @require_role(["ADMIN"])
 def update_election_status(election_id):
@@ -250,13 +363,13 @@ def update_election_status(election_id):
             "message": f"Cannot transition from '{election.status}' to '{target_status}'. Allowed transitions: {allowed}"
         }), 400
 
-    # Readiness checks when transitioning to PUBLISHED or OPEN
+    # Authoritative readiness checks when transitioning to PUBLISHED or OPEN
     if target_status in ["PUBLISHED", "OPEN"]:
-        const_count = ElectionConstituency.query.filter_by(election_id=election.id).count()
-        if const_count == 0:
+        is_valid, err_msg = validate_election_for_publish(election)
+        if not is_valid:
             return jsonify({
                 "error": "PREPARATION_INCOMPLETE",
-                "message": "Cannot advance election: No participating constituencies have been configured."
+                "message": err_msg
             }), 400
 
     try:
@@ -306,14 +419,14 @@ def add_election_constituency(election_id):
     nota_exists = Candidate.query.filter_by(election_id=election_id, constituency_id=constituency_id, is_nota=True).first()
     if not nota_exists:
         max_pos = db.session.query(func.coalesce(func.max(Candidate.ballot_position), 0))\
-            .filter_by(election_id=election_id, constituency_id=constituency_id).scalar()
+            .filter_by(election_id=election_id, constituency_id=constituency_id, is_nota=False).scalar()
         nota = Candidate(
             election_id=election_id,
             constituency_id=constituency.id,
             constituency=constituency.name,
             name="None of the Above (NOTA)",
             party="NOTA",
-            ballot_position=max(max_pos + 1, 999),
+            ballot_position=max_pos + 1 if max_pos > 0 else 1,
             is_active=True,
             is_nota=True
         )
@@ -433,6 +546,129 @@ def create_candidate():
 
     return jsonify({"message": "Candidate added successfully.", "candidate": candidate.to_dict()}), 201
 
+@admin_bp.route("/candidates/<string:candidate_id>", methods=["PATCH"])
+@require_role(["ADMIN"])
+def update_candidate(candidate_id):
+    candidate = Candidate.query.filter_by(id=candidate_id).first()
+    if not candidate:
+        return jsonify({"error": "NOT_FOUND", "message": "Candidate not found."}), 404
+
+    election = Election.query.filter_by(id=candidate.election_id).first()
+    if not election or election.status != "DRAFT":
+        return jsonify({
+            "error": "LOCKED",
+            "message": f"Candidate roster locked. Cannot edit candidates while election is in '{election.status if election else 'UNKNOWN'}' status."
+        }), 409
+
+    data = request.get_json() or {}
+
+    if candidate.is_nota:
+        if "name" in data or "party" in data:
+            return jsonify({"error": "VALIDATION_ERROR", "message": "Cannot modify name or party for NOTA option."}), 400
+
+    new_name = data.get("name", candidate.name).strip() if "name" in data else candidate.name
+    new_party = data.get("party", candidate.party).strip() if "party" in data else candidate.party
+
+    if not new_name:
+        return jsonify({"error": "VALIDATION_ERROR", "message": "Candidate name cannot be empty."}), 400
+    if not new_party:
+        return jsonify({"error": "VALIDATION_ERROR", "message": "Party cannot be empty."}), 400
+
+    # Check duplicate name in same constituency
+    if new_name != candidate.name:
+        dup = Candidate.query.filter(
+            Candidate.election_id == candidate.election_id,
+            Candidate.constituency_id == candidate.constituency_id,
+            Candidate.name == new_name,
+            Candidate.id != candidate.id
+        ).first()
+        if dup:
+            return jsonify({"error": "CONFLICT", "message": f"Candidate '{new_name}' already registered in this constituency."}), 409
+
+    candidate.name = new_name
+    candidate.party = new_party
+
+    if "ballot_position" in data and not candidate.is_nota:
+        new_pos = int(data["ballot_position"])
+        if new_pos <= 0:
+            return jsonify({"error": "VALIDATION_ERROR", "message": "Ballot position must be positive."}), 400
+        # Check duplicate position
+        dup_pos = Candidate.query.filter(
+            Candidate.election_id == candidate.election_id,
+            Candidate.constituency_id == candidate.constituency_id,
+            Candidate.ballot_position == new_pos,
+            Candidate.id != candidate.id,
+            Candidate.is_nota == False
+        ).first()
+        if dup_pos:
+            return jsonify({"error": "CONFLICT", "message": f"Ballot position {new_pos} is already taken in this constituency."}), 409
+        candidate.ballot_position = new_pos
+
+    db.session.flush()
+
+    # Reposition NOTA strictly last
+    nota = Candidate.query.filter_by(election_id=candidate.election_id, constituency_id=candidate.constituency_id, is_nota=True).first()
+    if nota:
+        max_reg = db.session.query(func.coalesce(func.max(Candidate.ballot_position), 0))\
+            .filter_by(election_id=candidate.election_id, constituency_id=candidate.constituency_id, is_nota=False).scalar()
+        nota.ballot_position = max_reg + 1
+
+    log_audit_event(
+        "CANDIDATE_UPDATED",
+        user_id=g.current_user["id"],
+        details={"candidate_id": candidate.id, "name": candidate.name, "party": candidate.party, "ballot_position": candidate.ballot_position}
+    )
+    db.session.commit()
+    return jsonify({"message": "Candidate updated.", "candidate": candidate.to_dict()}), 200
+
+@admin_bp.route("/candidates/<string:candidate_id>", methods=["DELETE"])
+@require_role(["ADMIN"])
+def delete_candidate(candidate_id):
+    candidate = Candidate.query.filter_by(id=candidate_id).first()
+    if not candidate:
+        return jsonify({"error": "NOT_FOUND", "message": "Candidate not found."}), 404
+
+    election = Election.query.filter_by(id=candidate.election_id).first()
+    if not election or election.status != "DRAFT":
+        return jsonify({
+            "error": "LOCKED",
+            "message": f"Candidate roster locked. Cannot delete candidates while election is in '{election.status if election else 'UNKNOWN'}' status."
+        }), 409
+
+    if candidate.is_nota:
+        return jsonify({
+            "error": "VALIDATION_ERROR",
+            "message": "Cannot delete NOTA option. Every participating constituency must include NOTA."
+        }), 400
+
+    el_id = candidate.election_id
+    cid = candidate.constituency_id
+    cand_name = candidate.name
+
+    db.session.delete(candidate)
+    db.session.flush()
+
+    # Re-compact / reposition remaining standard candidates and NOTA
+    remaining_std = Candidate.query.filter_by(election_id=el_id, constituency_id=cid, is_nota=False)\
+        .order_by(Candidate.ballot_position.asc()).all()
+    
+    for idx, c in enumerate(remaining_std, start=1):
+        c.ballot_position = idx
+    db.session.flush()
+
+    # NOTA is placed at len(remaining_std) + 1 (or 1 if none)
+    nota = Candidate.query.filter_by(election_id=el_id, constituency_id=cid, is_nota=True).first()
+    if nota:
+        nota.ballot_position = len(remaining_std) + 1
+
+    log_audit_event(
+        "CANDIDATE_DELETED",
+        user_id=g.current_user["id"],
+        details={"candidate_id": candidate_id, "name": cand_name, "election_id": el_id, "constituency_id": cid}
+    )
+    db.session.commit()
+    return jsonify({"message": f"Candidate '{cand_name}' removed from constituency roster."}), 200
+
 @admin_bp.route("/candidates", methods=["GET"])
 @require_role(["ADMIN"])
 def list_candidates():
@@ -451,6 +687,167 @@ def list_candidates():
     # Sort standard candidates by ballot_position, with NOTA strictly last
     candidates = query.order_by(Candidate.is_nota.asc(), Candidate.ballot_position.asc()).all()
     return jsonify({"candidates": [c.to_dict() for c in candidates]}), 200
+
+@admin_bp.route("/elections/<string:election_id>/candidates", methods=["PUT"])
+@require_role(["ADMIN"])
+def batch_update_election_candidates(election_id):
+    election = Election.query.filter_by(id=election_id).first()
+    if not election:
+        return jsonify({"error": "NOT_FOUND", "message": "Election not found."}), 404
+
+    if election.status != "DRAFT":
+        return jsonify({
+            "error": "LOCKED",
+            "message": f"Candidate roster locked. Cannot update candidates while election is in '{election.status}' status."
+        }), 409
+
+    data = request.get_json() or {}
+    candidates_list = data.get("candidates", [])
+
+    assocs = ElectionConstituency.query.filter_by(election_id=election_id).all()
+    participating_cids = {a.constituency_id: (a.constituency.name if a.constituency else a.constituency_id) for a in assocs}
+
+    cands_by_const = {cid: [] for cid in participating_cids}
+    for c in candidates_list:
+        cid = c.get("constituency_id")
+        if cid not in participating_cids:
+            return jsonify({"error": "VALIDATION_ERROR", "message": f"Constituency '{cid}' is not participating in this election."}), 400
+        cands_by_const[cid].append(c)
+
+    for cid, c_list in cands_by_const.items():
+        cname = participating_cids[cid]
+        names = []
+        positions = []
+        for c in c_list:
+            cname_str = (c.get("name") or "").strip()
+            party_str = (c.get("party") or "").strip()
+            if not cname_str:
+                return jsonify({"error": "VALIDATION_ERROR", "message": f"Candidate name cannot be empty in {cname}."}), 400
+            if not party_str:
+                return jsonify({"error": "VALIDATION_ERROR", "message": f"Candidate '{cname_str}' in {cname} requires party affiliation."}), 400
+            names.append(cname_str.lower())
+            pos = c.get("ballot_position")
+            if pos is not None:
+                if int(pos) <= 0:
+                    return jsonify({"error": "VALIDATION_ERROR", "message": f"Invalid ballot position for candidate '{cname_str}' in {cname}."}), 400
+                positions.append(int(pos))
+
+        if len(names) != len(set(names)):
+            return jsonify({"error": "CONFLICT", "message": f"Duplicate candidate found in {cname}."}), 409
+        if len(positions) != len(set(positions)):
+            return jsonify({"error": "CONFLICT", "message": f"Duplicate ballot position found in {cname}."}), 409
+
+    # Delete existing non-NOTA candidates for this election
+    Candidate.query.filter_by(election_id=election_id, is_nota=False).delete(synchronize_session=False)
+    db.session.flush()
+
+    created_candidates = []
+    for cid, c_list in cands_by_const.items():
+        cname = participating_cids[cid]
+        c_list_sorted = sorted(c_list, key=lambda x: x.get("ballot_position", 9999))
+        for idx, c_data in enumerate(c_list_sorted, start=1):
+            pos = int(c_data.get("ballot_position")) if c_data.get("ballot_position") else idx
+            cand = Candidate(
+                election_id=election_id,
+                constituency_id=cid,
+                constituency=cname,
+                name=c_data["name"].strip(),
+                party=c_data["party"].strip(),
+                ballot_position=pos,
+                is_active=True,
+                is_nota=False
+            )
+            db.session.add(cand)
+            created_candidates.append(cand)
+        db.session.flush()
+
+        max_std = db.session.query(func.coalesce(func.max(Candidate.ballot_position), 0))\
+            .filter_by(election_id=election_id, constituency_id=cid, is_nota=False).scalar()
+        nota = Candidate.query.filter_by(election_id=election_id, constituency_id=cid, is_nota=True).first()
+        if nota:
+            nota.ballot_position = max_std + 1
+        else:
+            nota = Candidate(
+                election_id=election_id,
+                constituency_id=cid,
+                constituency=cname,
+                name="None of the Above (NOTA)",
+                party="NOTA",
+                ballot_position=max_std + 1,
+                is_active=True,
+                is_nota=True
+            )
+            db.session.add(nota)
+
+    log_audit_event(
+        "CANDIDATES_BATCH_CONFIGURED",
+        user_id=g.current_user["id"],
+        details={"election_id": election_id, "candidates_count": len(created_candidates)}
+    )
+    db.session.commit()
+
+    all_cands = Candidate.query.filter_by(election_id=election_id).order_by(Candidate.is_nota.asc(), Candidate.ballot_position.asc()).all()
+    return jsonify({
+        "message": "Candidate roster configured successfully.",
+        "candidates": [c.to_dict() for c in all_cands]
+    }), 200
+
+@admin_bp.route("/elections/<string:election_id>/readiness", methods=["GET"])
+@require_role(["ADMIN"])
+def get_election_readiness(election_id):
+    election = Election.query.filter_by(id=election_id).first()
+    if not election:
+        return jsonify({"error": "NOT_FOUND", "message": "Election not found."}), 404
+
+    assocs = ElectionConstituency.query.filter_by(election_id=election.id).all()
+    constituencies_summary = []
+    all_issues = []
+
+    if not assocs:
+        all_issues.append("No participating constituencies configured.")
+
+    for assoc in assocs:
+        cname = assoc.constituency.name if assoc.constituency else assoc.constituency_id
+        cands = Candidate.query.filter_by(election_id=election.id, constituency_id=assoc.constituency_id).order_by(Candidate.is_nota.asc(), Candidate.ballot_position.asc()).all()
+        std_cands = [c for c in cands if not c.is_nota]
+        nota_cands = [c for c in cands if c.is_nota]
+        c_issues = []
+
+        if len(std_cands) == 0:
+            c_issues.append(f"Candidate configuration incomplete for {cname}.")
+        if len(nota_cands) == 0:
+            c_issues.append(f"Missing NOTA option for {cname}.")
+        elif len(nota_cands) > 1:
+            c_issues.append(f"Multiple NOTA options in {cname}.")
+        elif std_cands and nota_cands[0].ballot_position <= max(c.ballot_position for c in std_cands):
+            c_issues.append(f"NOTA is not positioned last in {cname}.")
+
+        pos_list = [c.ballot_position for c in cands]
+        if len(pos_list) != len(set(pos_list)):
+            c_issues.append(f"Duplicate ballot positions in {cname}.")
+
+        all_issues.extend(c_issues)
+        constituencies_summary.append({
+            "constituency_id": assoc.constituency_id,
+            "constituency_name": cname,
+            "candidates_count": len(std_cands),
+            "has_nota": len(nota_cands) == 1,
+            "total_ballot_options": len(cands),
+            "is_complete": len(c_issues) == 0,
+            "issues": c_issues,
+            "candidates": [c.to_dict() for c in cands]
+        })
+
+    is_ready = len(all_issues) == 0 and len(assocs) > 0
+    return jsonify({
+        "election_id": election.id,
+        "title": election.title,
+        "status": election.status,
+        "is_ready": is_ready,
+        "configuration_status": "COMPLETE" if is_ready else "INCOMPLETE",
+        "issues": all_issues,
+        "constituencies_summary": constituencies_summary
+    }), 200
 
 # 5. AGGREGATE PARTICIPATION STATISTICS (ZERO CHOICE/VOTER DISCLOSURE)
 @admin_bp.route("/elections/<string:election_id>/participation-stats", methods=["GET"])

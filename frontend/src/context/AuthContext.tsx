@@ -9,9 +9,9 @@ interface AuthContextType {
   token: string | null;
   login: (token: string, user: UserProfile) => void;
   logout: () => void;
-  initiateVoterLogin: (voterId: string) => Promise<{ stageToken: string; maskedMobile: string; message: string }>;
+  initiateVoterLogin: (voterId: string) => Promise<{ stageToken: string; maskedMobile: string; deliveryMode?: string; message: string }>;
   verifyVoterOtp: (stageToken: string, otp: string) => Promise<{ stageToken: string; message: string }>;
-  resendVoterOtp: (stageToken: string) => Promise<{ message: string; maskedMobile?: string }>;
+  resendVoterOtp: (stageToken: string) => Promise<{ message: string; maskedMobile?: string; deliveryMode?: string }>;
   verifyVoterIdentity: (stageToken: string, data: { is_demo_fallback?: boolean; frame_data?: string }) => Promise<UserProfile>;
   loginAdmin: (username: string, password: string) => Promise<UserProfile>;
   isAuthenticated: boolean;
@@ -53,6 +53,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return {
       stageToken: res.data.stage_token,
       maskedMobile: res.data.masked_mobile,
+      deliveryMode: res.data.delivery_mode || 'demo',
       message: res.data.message
     };
   };
@@ -69,7 +70,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const res = await api.resendVoterOtp({ stage_token: stageToken });
     return {
       message: res.data.message,
-      maskedMobile: res.data.masked_mobile
+      maskedMobile: res.data.masked_mobile,
+      deliveryMode: res.data.delivery_mode || 'demo'
     };
   };
 

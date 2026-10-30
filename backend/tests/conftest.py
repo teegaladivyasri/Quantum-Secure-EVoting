@@ -19,6 +19,16 @@ class TestConfig:
     BB84_QBER_THRESHOLD = 0.11
     SIMULATE_EAVESDROPPING = False
 
+@pytest.fixture(autouse=True)
+def default_demo_delivery_mode(monkeypatch):
+    """
+    Ensures unit and integration tests run in DEMO mode by default,
+    preventing tests from making accidental real SMS network calls.
+    Tests specifically testing SMS mode can explicitly monkeypatch Config.OTP_DELIVERY_MODE.
+    """
+    from backend.config import Config
+    monkeypatch.setattr(Config, "OTP_DELIVERY_MODE", "demo")
+
 @pytest.fixture
 def app():
     app = create_app(TestConfig)

@@ -78,25 +78,26 @@ def test_workflow():
     assert election["is_active"] is False
     print(f"[PASS] 3. Created draft election '{title}' (ID: {el_id}, Status: DRAFT)")
 
-    # 4. Fetch Constituencies and Link Ward-1 and Ward-2
+    # 4. Fetch Constituencies and Link dynamic constituencies
     status, const_data = api_call("GET", "/admin/constituencies", headers=admin_headers)
     assert status == 200
     constituencies = const_data["constituencies"]
-    w1 = next(c for c in constituencies if c["name"] == "Ward-1")
-    w2 = next(c for c in constituencies if c["name"] == "Ward-2")
+    # Pick first two available constituencies (e.g. Bobbili and Bhimili)
+    w1 = constituencies[0]
+    w2 = constituencies[1]
 
     status, _ = api_call("POST", f"/admin/elections/{el_id}/constituencies", {"constituency_id": w1["id"]}, headers=admin_headers)
     assert status == 201
     status, _ = api_call("POST", f"/admin/elections/{el_id}/constituencies", {"constituency_id": w2["id"]}, headers=admin_headers)
     assert status == 201
-    print("[PASS] 4. Linked Ward-1 and Ward-2 with auto-provisioned NOTA options")
+    print(f"[PASS] 4. Linked {w1['name']} and {w2['name']} with auto-provisioned NOTA options")
 
-    # 5. Add Candidates to Ward-1
+    # 5. Add Candidates to first constituency
     status, c1_data = api_call("POST", "/admin/candidates", {
         "election_id": el_id,
         "constituency_id": w1["id"],
-        "name": "Dr. Sarah Rao",
-        "party": "Progressive Coalition",
+        "name": "Candidate Alpha",
+        "party": "Party Alpha",
         "ballot_position": 1
     }, headers=admin_headers)
     assert status == 201
@@ -105,22 +106,30 @@ def test_workflow():
     status, _ = api_call("POST", "/admin/candidates", {
         "election_id": el_id,
         "constituency_id": w1["id"],
-        "name": "K. Venkatesh",
-        "party": "Democratic Alliance",
+        "name": "Candidate Beta",
+        "party": "Party Beta",
         "ballot_position": 2
     }, headers=admin_headers)
     assert status == 201
-    print("[PASS] 5. Registered standard candidates into Ward-1")
+    status, _ = api_call("POST", "/admin/candidates", {
+        "election_id": el_id,
+        "constituency_id": w2["id"],
+        "name": "Candidate Gamma",
+        "party": "Party Gamma",
+        "ballot_position": 1
+    }, headers=admin_headers)
+    assert status == 201
+    print(f"[PASS] 5. Registered standard candidates into {w1['name']} and {w2['name']}")
 
     # 6. Verify Candidate Roster Order (NOTA strictly last)
     status, cand_list_data = api_call("GET", f"/admin/candidates?election_id={el_id}&constituency_id={w1['id']}", headers=admin_headers)
     assert status == 200
     w1_cands = cand_list_data["candidates"]
     assert len(w1_cands) == 3
-    assert w1_cands[0]["name"] == "Dr. Sarah Rao" and w1_cands[0]["ballot_position"] == 1
-    assert w1_cands[1]["name"] == "K. Venkatesh" and w1_cands[1]["ballot_position"] == 2
+    assert w1_cands[0]["name"] == "Candidate Alpha" and w1_cands[0]["ballot_position"] == 1
+    assert w1_cands[1]["name"] == "Candidate Beta" and w1_cands[1]["ballot_position"] == 2
     assert w1_cands[2]["name"] == "None of the Above (NOTA)" and w1_cands[2]["is_nota"] is True
-    print("[PASS] 6. Candidate order verified: Dr. Rao (1) -> K. Venkatesh (2) -> NOTA (3)")
+    print(f"[PASS] 6. Candidate order verified: Alpha (1) -> Beta (2) -> NOTA (3)")
 
     # 7. Transition Election: DRAFT -> PUBLISHED -> OPEN
     status, pub_data = api_call("PATCH", f"/admin/elections/{el_id}/status", {"status": "PUBLISHED"}, headers=admin_headers)
@@ -133,7 +142,7 @@ def test_workflow():
     assert open_data["election"]["is_active"] is True
     print("[PASS] 7. Election transitioned through DRAFT -> PUBLISHED -> OPEN (Active)")
 
-    # 8. Voter Authentication for voter_bob (Ward-1)
+    # 8. Voter Authentication for an active seeded voter
     import os
     sys.path.insert(0, os.getcwd())
     from backend.app import create_app
@@ -142,19 +151,26 @@ def test_workflow():
 
     app = create_app()
     with app.app_context():
-        voter = User.query.filter_by(voter_id="VTR-2026-00102").first()
+        # Find voter matching w1's constituency, or any active voter
+        voter = User.query.filter_by(constituency=w1["name"], role="VOTER").first()
+        if not voter:
+            voter = User.query.filter_by(role="VOTER", is_active=True).first()
+            # Assign voter to w1 for this test
+            voter.constituency = w1["name"]
+            from backend.extensions import db
+            db.session.commit()
         assert voter is not None
         voter_token = generate_jwt(voter.id, "VOTER")
     voter_headers = {"Authorization": f"Bearer {voter_token}"}
-    print("[PASS] 8. Authenticated voter_bob (VTR-2026-00102, Ward-1)")
+    print(f"[PASS] 8. Authenticated voter ({voter.voter_id}, {w1['name']})")
 
     # 9. Voter Retrieves EVM Ballot Unit
     status, ballot_info = api_call("GET", f"/voter/election-info?election_id={el_id}", headers=voter_headers)
     assert status == 200
-    assert ballot_info["voter_constituency"] == "Ward-1"
+    assert ballot_info["voter_constituency"] == w1["name"]
     voter_cands = ballot_info["eligible_candidates"]
     assert len(voter_cands) == 3
-    print(f"[PASS] 9. Voter retrieved Ward-1 ballot unit: {len(voter_cands)} options")
+    print(f"[PASS] 9. Voter retrieved {w1['name']} ballot unit: {len(voter_cands)} options")
 
     # 10. Voter Casts Ballot for NOTA
     nota_cand = next(c for c in voter_cands if c["is_nota"])

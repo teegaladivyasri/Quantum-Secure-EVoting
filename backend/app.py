@@ -1,3 +1,4 @@
+import logging
 from flask import Flask, jsonify
 from backend.config import Config
 from backend.extensions import db, cors
@@ -5,6 +6,10 @@ from backend.extensions import db, cors
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
+
+    # Configure application logging
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    app.logger.setLevel(logging.INFO)
 
     # Initialize extensions
     db.init_app(app)

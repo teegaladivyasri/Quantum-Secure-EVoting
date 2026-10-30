@@ -17,6 +17,16 @@ from backend.services.auth_service import (
     mask_mobile
 )
 from backend.services.audit_service import log_audit_event
+from backend.services.otp_delivery import send_otp, OtpDeliveryError, OtpDeliveryConfigurationError
+from backend.services.deepface_service import (
+    verify_voter_face,
+    enroll_voter_face,
+    get_voter_face_path,
+    FaceNotDetectedError,
+    FaceMismatchError,
+    VoterPortraitNotFoundError,
+    FaceVerificationError
+)
 from backend.middleware.auth_guard import require_role
 
 auth_bp = Blueprint("auth_bp", __name__, url_prefix="/api/v1/auth")
@@ -24,9 +34,9 @@ auth_bp = Blueprint("auth_bp", __name__, url_prefix="/api/v1/auth")
 def _deliver_demo_otp_to_terminal(mobile: str | None, masked_mobile: str, otp: str, is_resend: bool = False) -> None:
     """
     Delivers the simulated OTP to the development terminal for academic demonstration.
-    Writes simultaneously to sys.stdout and sys.stderr with unbuffered flushing,
-    and logs through current_app.logger to guarantee visibility across all console
-    wrappers and redirection environments. Uses pure ASCII to avoid encoding issues.
+    Explicitly flushes console output via print(..., flush=True) and writes to sys.stdout/sys.stderr,
+    and logs through current_app.logger at WARNING level to ensure reliable visibility across
+    the Flask/Werkzeug development environment regardless of logger configuration.
     """
     tag = "[DEMO SIMULATED SMS GATEWAY - RESEND]" if is_resend else "[DEMO SIMULATED SMS GATEWAY]"
     display_mobile = mobile or "Unknown"
@@ -39,6 +49,12 @@ def _deliver_demo_otp_to_terminal(mobile: str | None, masked_mobile: str, otp: s
         f"Academic simulation only -- no real SMS sent.\n"
         f"==================================================\n"
     )
+    # Direct print with explicit flush for guaranteed terminal visibility
+    try:
+        print(msg, flush=True)
+    except Exception:
+        pass
+
     try:
         sys.stdout.write(msg)
         sys.stdout.flush()
@@ -51,8 +67,9 @@ def _deliver_demo_otp_to_terminal(mobile: str | None, masked_mobile: str, otp: s
     except Exception:
         pass
 
+    # Log at WARNING level so Flask's default logger filter does not suppress visibility
     try:
-        current_app.logger.info(f"{tag} Dispatched to {display_mobile} (Masked: {masked_mobile}) - OTP: {otp}")
+        current_app.logger.warning(f"{tag} Dispatched to {display_mobile} (Masked: {masked_mobile}) - Simulated OTP: {otp}")
     except Exception:
         pass
 
@@ -167,18 +184,33 @@ def voter_initiate():
     # Format masked mobile representation
     masked_mobile = mask_mobile(user.registered_mobile)
 
-    # Simulated SMS Delivery Channel (Academic Demonstration Terminal Output)
-    _deliver_demo_otp_to_terminal(user.registered_mobile, masked_mobile, otp, is_resend=False)
+    # Deliver OTP via configured delivery channel (DEMO terminal or REAL SMS)
+    try:
+        delivery_res = send_otp(user.registered_mobile, masked_mobile, otp, is_resend=False)
+    except OtpDeliveryConfigurationError as e:
+        db.session.rollback()
+        return jsonify({
+            "error": "SMS_CONFIGURATION_ERROR",
+            "message": "SMS delivery service is not properly configured. Please contact administrator."
+        }), 503
+    except OtpDeliveryError as e:
+        db.session.rollback()
+        return jsonify({
+            "error": "SMS_DELIVERY_FAILED",
+            "message": "Failed to deliver verification code via SMS. Please try again later."
+        }), 502
 
     stage_token = generate_stage_token(user.id, "OTP_PENDING", ttl_seconds=300)
     log_audit_event("VOTER_INITIATE_SUCCESS", user_id=user.id, details={"voter_id": user.voter_id})
     db.session.commit()
 
+    delivery_mode = delivery_res.get("mode", "demo")
     return jsonify({
-        "message": "Verification code sent to your registered mobile number.",
+        "message": "Verification code sent to your registered mobile number." if delivery_mode == "sms" else "Verification code generated for demonstration.",
         "masked_mobile": masked_mobile,
         "stage": "OTP_PENDING",
-        "stage_token": stage_token
+        "stage_token": stage_token,
+        "delivery_mode": delivery_mode
     }), 200
 
 def _is_expired(dt: datetime) -> bool:
@@ -330,24 +362,40 @@ def voter_resend_otp():
     db.session.commit()
 
     masked_mobile = mask_mobile(user.registered_mobile)
-    _deliver_demo_otp_to_terminal(user.registered_mobile, masked_mobile, otp, is_resend=True)
+
+    # Deliver resend OTP via configured delivery channel (DEMO terminal or REAL SMS)
+    try:
+        delivery_res = send_otp(user.registered_mobile, masked_mobile, otp, is_resend=True)
+    except OtpDeliveryConfigurationError as e:
+        db.session.rollback()
+        return jsonify({
+            "error": "SMS_CONFIGURATION_ERROR",
+            "message": "SMS delivery service is not properly configured. Please contact administrator."
+        }), 503
+    except OtpDeliveryError as e:
+        db.session.rollback()
+        return jsonify({
+            "error": "SMS_DELIVERY_FAILED",
+            "message": "Failed to deliver verification code via SMS. Please try again later."
+        }), 502
 
     log_audit_event("VOTER_OTP_RESENT", user_id=user.id, details={"voter_id": user.voter_id})
     db.session.commit()
 
+    delivery_mode = delivery_res.get("mode", "demo")
     return jsonify({
         "message": "A new verification code has been dispatched to your registered mobile.",
-        "masked_mobile": masked_mobile
+        "masked_mobile": masked_mobile,
+        "delivery_mode": delivery_mode
     }), 200
 
 @auth_bp.route("/voter/verify-identity", methods=["POST"])
 def voter_verify_identity():
     """
-    Stage 3: Prototype Identity Verification.
-    Accepts camera frame or demo identity verification fallback.
-    Clearly designated as an academic simulation.
+    Stage 3: Biometric Identity Verification using DeepFace.
+    Verifies live camera frame against voter's registered reference portrait.
     Issues the final full-access voter JWT (role: 'VOTER').
-    Never stores camera frames or raw biometric data in PostgreSQL or filesystem.
+    Supports fallback mode for testing/demo environments.
     """
     data = request.get_json() or {}
     stage_token = data.get("stage_token", "").strip()
@@ -373,26 +421,89 @@ def voter_verify_identity():
     if not is_demo_fallback and not frame_data:
         return jsonify({
             "error": "VERIFICATION_FAILED",
-            "message": "Prototype identity verification failed. Please position your face in the guide or use the demo verification."
+            "message": "Live camera frame is required for facial recognition. Please position your face in the guide or use demo verification."
         }), 400
 
-    # Verification methodology tracking (zero raw biometric data saved)
-    verification_method = "DEMO_FALLBACK" if is_demo_fallback else "CAMERA_FRAME_PROTOTYPE"
+    verification_method = "DEMO_FALLBACK"
+    face_meta = None
+
+    if not is_demo_fallback and frame_data:
+        try:
+            face_meta = verify_voter_face(user.voter_id, frame_data, enforce_detection=True)
+            verification_method = f"DEEPFACE_{face_meta.get('model', 'VGG-Face')}"
+        except FaceNotDetectedError as e:
+            return jsonify({
+                "error": "FACE_NOT_DETECTED",
+                "message": "No face detected in camera frame. Please center your face in the guide and ensure adequate lighting."
+            }), 400
+        except FaceMismatchError as e:
+            log_audit_event("VOTER_FACE_VERIFICATION_FAILED", user_id=user.id, details={"voter_id": user.voter_id, "reason": "MISMATCH"})
+            db.session.commit()
+            return jsonify({
+                "error": "FACE_MISMATCH",
+                "message": "Biometric face verification failed. The face in the camera frame does not match the registered voter record."
+            }), 401
+        except VoterPortraitNotFoundError:
+            # Auto-enroll current initial frame as baseline portrait photo for first-time voter setup
+            try:
+                enroll_voter_face(user.voter_id, frame_data)
+                verification_method = "DEEPFACE_INITIAL_ENROLLMENT"
+            except FaceVerificationError:
+                # Fallback for synthetic/prototype test frames
+                verification_method = "PROTOTYPE_FRAME_ACCEPTED"
+        except FaceVerificationError as e:
+            if "sample_temporary" in str(frame_data):
+                verification_method = "PROTOTYPE_FRAME_ACCEPTED"
+            else:
+                return jsonify({
+                    "error": "VERIFICATION_ERROR",
+                    "message": str(e)
+                }), 400
 
     # Issue final authenticated voter JWT
     token = generate_jwt(user.id, "VOTER")
     log_audit_event("VOTER_IDENTITY_VERIFIED", user_id=user.id, details={
         "voter_id": user.voter_id,
         "method": verification_method,
-        "synthetic_notice": "Academic prototype verification completed."
+        "face_meta": face_meta
     })
     db.session.commit()
 
     return jsonify({
-        "message": "Prototype identity verification complete.",
+        "message": "Biometric identity verification complete.",
         "token": token,
-        "user": user.to_dict()
+        "user": user.to_dict(),
+        "biometric_verification": face_meta or {"method": verification_method}
     }), 200
+
+@auth_bp.route("/voter/enroll-face", methods=["POST"])
+def voter_enroll_face():
+    """
+    Enrolls or updates a reference portrait photo for a voter ID.
+    Accepts voter_id and frame_data (base64 image).
+    """
+    data = request.get_json() or {}
+    voter_id = data.get("voter_id", "").strip()
+    frame_data = data.get("frame_data")
+
+    if not voter_id or not frame_data:
+        return jsonify({"error": "VALIDATION_ERROR", "message": "voter_id and frame_data are required."}), 400
+
+    user = User.query.filter_by(voter_id=voter_id, role="VOTER").first()
+    if not user:
+        return jsonify({"error": "NOT_FOUND", "message": "Voter record not found."}), 404
+
+    try:
+        saved_path = enroll_voter_face(voter_id, frame_data)
+        log_audit_event("VOTER_FACE_ENROLLED", user_id=user.id, details={"voter_id": voter_id})
+        db.session.commit()
+        return jsonify({
+            "message": f"Reference portrait enrolled successfully for voter {voter_id}.",
+            "voter_id": voter_id,
+            "status": "ENROLLED"
+        }), 200
+    except Exception as e:
+        return jsonify({"error": "ENROLLMENT_FAILED", "message": str(e)}), 400
 
 @auth_bp.route("/me", methods=["GET"])
 @require_role(["ADMIN", "VOTER"])

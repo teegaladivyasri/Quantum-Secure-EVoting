@@ -37,7 +37,7 @@ class Constituency(db.Model):
     )
     state: Mapped[str] = mapped_column(
         String(100), 
-        default="Example State", 
+        default="Andhra Pradesh", 
         nullable=False
     )
     is_active: Mapped[bool] = mapped_column(

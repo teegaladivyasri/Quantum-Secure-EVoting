@@ -41,6 +41,7 @@ export interface VoterInitiateResponse {
   masked_mobile: string;
   stage: string;
   stage_token: string;
+  delivery_mode?: 'demo' | 'sms';
 }
 
 export interface VoterVerifyOtpRequest {
@@ -61,6 +62,7 @@ export interface VoterResendOtpRequest {
 export interface VoterResendOtpResponse {
   message: string;
   masked_mobile?: string;
+  delivery_mode?: 'demo' | 'sms';
 }
 
 export interface VoterVerifyIdentityRequest {
@@ -114,6 +116,10 @@ export interface Election {
   is_active: boolean;
   created_at: string;
   participating_constituencies?: Constituency[];
+  candidates_count?: number;
+  configuration_status?: 'COMPLETE' | 'INCOMPLETE';
+  is_configured?: boolean;
+  incomplete_reasons?: string[];
 }
 
 export interface Candidate {
@@ -252,6 +258,12 @@ export const api = {
     voting_open_at?: string;
     voting_close_at?: string;
     constituency_ids?: string[];
+    candidates?: Array<{
+      constituency_id: string;
+      name: string;
+      party: string;
+      ballot_position?: number;
+    }>;
   }) => apiClient.post<{ message: string; election: Election }>('/admin/elections', data),
   getElections: () => apiClient.get<{ elections: Election[] }>('/admin/elections'),
   getElection: (id: string) => apiClient.get<{ election: Election }>(`/admin/elections/${id}`),
@@ -259,6 +271,18 @@ export const api = {
     apiClient.patch<{ message: string; election: Election }>(`/admin/elections/${id}`, data),
   updateElectionStatus: (id: string, status: 'DRAFT' | 'PUBLISHED' | 'OPEN' | 'CLOSED') =>
     apiClient.patch<{ message: string; election: Election }>(`/admin/elections/${id}/status`, { status }),
+  deleteElection: (id: string) =>
+    apiClient.delete<{ message: string }>(`/admin/elections/${id}`),
+  getElectionReadiness: (electionId: string) =>
+    apiClient.get<{
+      election_id: string;
+      title: string;
+      status: string;
+      is_ready: boolean;
+      configuration_status: 'COMPLETE' | 'INCOMPLETE';
+      issues: string[];
+      constituencies_summary: any[];
+    }>(`/admin/elections/${electionId}/readiness`),
   addElectionConstituency: (electionId: string, constituencyId: string) =>
     apiClient.post(`/admin/elections/${electionId}/constituencies`, { constituency_id: constituencyId }),
 
@@ -270,6 +294,12 @@ export const api = {
     party: string;
     ballot_position?: number;
   }) => apiClient.post<{ message: string; candidate: Candidate }>('/admin/candidates', data),
+  updateCandidate: (id: string, data: { name?: string; party?: string; ballot_position?: number }) =>
+    apiClient.patch<{ message: string; candidate: Candidate }>(`/admin/candidates/${id}`, data),
+  deleteCandidate: (id: string) =>
+    apiClient.delete<{ message: string }>(`/admin/candidates/${id}`),
+  batchUpdateCandidates: (electionId: string, candidates: Array<{ constituency_id: string; name: string; party: string; ballot_position?: number }>) =>
+    apiClient.put<{ message: string; candidates: Candidate[] }>(`/admin/elections/${electionId}/candidates`, { candidates }),
   getCandidates: (params?: { election_id?: string; constituency_id?: string }) =>
     apiClient.get<{ candidates: Candidate[] }>('/admin/candidates', { params }),
 

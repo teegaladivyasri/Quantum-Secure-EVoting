@@ -322,3 +322,186 @@ def test_dedicated_admin_login(client):
     data = res.get_json()
     assert data["user"]["role"] == "ADMIN"
     assert "token" in data
+
+
+# ==========================================
+# 6. PHASE 17A: SMS & DEMO OTP DELIVERY TESTS
+# ==========================================
+
+def test_otp_delivery_demo_mode_terminal(client, synthetic_voter, capsys, monkeypatch):
+    """Verify DEMO mode prints OTP to terminal and excludes OTP from API response."""
+    from backend.config import Config
+    monkeypatch.setattr(Config, "OTP_DELIVERY_MODE", "demo")
+
+    capsys.readouterr()  # Clear buffer
+    res = client.post("/api/v1/auth/voter/initiate", json={"voter_id": "VTR-2026-00101"})
+    assert res.status_code == 200
+    data = res.get_json()
+
+    assert data["stage"] == "OTP_PENDING"
+    assert data["masked_mobile"] == "******3101"
+    assert data["delivery_mode"] == "demo"
+    assert "otp" not in data
+
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+    assert "[DEMO SIMULATED SMS GATEWAY]" in combined
+    assert "Dispatched to: +91 98765 43101" in combined
+    assert "Simulated OTP:" in combined
+
+
+def test_otp_delivery_sms_mode_success_mocked(client, app, synthetic_voter, monkeypatch):
+    """Verify REAL SMS mode dispatches OTP through provider without leaking OTP in API or terminal."""
+    from backend.config import Config
+    from backend.services import otp_delivery
+
+    sent_records = []
+
+    def mock_send_twilio(to_number, otp, cfg):
+        sent_records.append({
+            "to": to_number,
+            "otp": otp,
+            "cfg_sid": cfg.get("TWILIO_ACCOUNT_SID")
+        })
+        return {"success": True, "provider": "twilio", "status": "queued"}
+
+    monkeypatch.setattr(Config, "OTP_DELIVERY_MODE", "sms")
+    monkeypatch.setattr(Config, "SMS_PROVIDER", "twilio")
+    monkeypatch.setattr(Config, "TWILIO_ACCOUNT_SID", "AC_TEST_MOCK_12345")
+    monkeypatch.setattr(Config, "TWILIO_AUTH_TOKEN", "AUTH_TEST_SECRET")
+    monkeypatch.setattr(Config, "TWILIO_FROM_NUMBER", "+15005550006")
+    monkeypatch.setattr(otp_delivery, "_send_twilio_sms", mock_send_twilio)
+
+    res = client.post("/api/v1/auth/voter/initiate", json={"voter_id": "VTR-2026-00101"})
+    assert res.status_code == 200
+    data = res.get_json()
+
+    # 1. API response secrecy
+    assert data["stage"] == "OTP_PENDING"
+    assert data["masked_mobile"] == "******3101"
+    assert data["delivery_mode"] == "sms"
+    assert "otp" not in data
+    assert "AC_TEST_MOCK_12345" not in json.dumps(data)
+    assert "AUTH_TEST_SECRET" not in json.dumps(data)
+
+    # 2. Provider call verification
+    assert len(sent_records) == 1
+    call = sent_records[0]
+    assert call["to"] == "+91 98765 43101"  # Registered mobile used
+    assert len(call["otp"]) == 6  # 6-digit numeric OTP passed
+    assert call["otp"].isdigit()
+
+    # 3. Session stored securely in database
+    with app.app_context():
+        session = VoterOtpSession.query.filter_by(voter_user_id=synthetic_voter, is_verified=False).first()
+        assert session is not None
+        assert session.otp_hash != call["otp"]  # Plaintext OTP not in DB
+        assert len(session.otp_hash) == 64  # SHA-256 hash
+
+
+def test_otp_delivery_sms_missing_credentials_fails_safely(client, synthetic_voter, monkeypatch):
+    """Verify SMS mode fails safely with 503 if provider credentials are not configured."""
+    from backend.config import Config
+    monkeypatch.setattr(Config, "OTP_DELIVERY_MODE", "sms")
+    monkeypatch.setattr(Config, "SMS_PROVIDER", "twilio")
+    monkeypatch.setattr(Config, "TWILIO_ACCOUNT_SID", "")
+    monkeypatch.setattr(Config, "TWILIO_AUTH_TOKEN", "")
+
+    res = client.post("/api/v1/auth/voter/initiate", json={"voter_id": "VTR-2026-00101"})
+    assert res.status_code == 503
+    data = res.get_json()
+    assert data["error"] == "SMS_CONFIGURATION_ERROR"
+    assert "otp" not in data
+    assert "secret" not in json.dumps(data).lower()
+
+
+def test_otp_delivery_sms_provider_failure_handled_safely(client, synthetic_voter, monkeypatch):
+    """Verify gateway failure returns safe 502 error and does not leak provider details."""
+    from backend.config import Config
+    from backend.services import otp_delivery
+
+    def mock_failing_twilio(*args, **kwargs):
+        raise otp_delivery.OtpDeliveryError("Twilio SMS gateway rejected transmission with status 400.")
+
+    monkeypatch.setattr(Config, "OTP_DELIVERY_MODE", "sms")
+    monkeypatch.setattr(Config, "SMS_PROVIDER", "twilio")
+    monkeypatch.setattr(Config, "TWILIO_ACCOUNT_SID", "AC_TEST")
+    monkeypatch.setattr(Config, "TWILIO_AUTH_TOKEN", "AUTH_TEST")
+    monkeypatch.setattr(Config, "TWILIO_FROM_NUMBER", "+15555555555")
+    monkeypatch.setattr(otp_delivery, "_send_twilio_sms", mock_failing_twilio)
+
+    res = client.post("/api/v1/auth/voter/initiate", json={"voter_id": "VTR-2026-00101"})
+    assert res.status_code == 502
+    data = res.get_json()
+    assert data["error"] == "SMS_DELIVERY_FAILED"
+    assert "Failed to deliver" in data["message"]
+    assert "otp" not in data
+    assert "twilio" not in data["message"].lower()  # Generic safe message
+
+
+def test_otp_delivery_sms_resend_mocked(client, app, synthetic_voter, monkeypatch):
+    """Verify resend in SMS mode dispatches new OTP via provider and invalidates old one."""
+    from backend.config import Config
+    from backend.services import otp_delivery
+
+    resend_records = []
+
+    def mock_send_sms(to_number, otp, cfg):
+        resend_records.append(otp)
+        return {"success": True, "provider": "twilio", "status": "queued"}
+
+    monkeypatch.setattr(Config, "OTP_DELIVERY_MODE", "sms")
+    monkeypatch.setattr(Config, "SMS_PROVIDER", "twilio")
+    monkeypatch.setattr(Config, "TWILIO_ACCOUNT_SID", "AC_TEST")
+    monkeypatch.setattr(Config, "TWILIO_AUTH_TOKEN", "AUTH_TEST")
+    monkeypatch.setattr(Config, "TWILIO_FROM_NUMBER", "+15555555555")
+    monkeypatch.setattr(otp_delivery, "_send_twilio_sms", mock_send_sms)
+
+    # 1. Initial initiate
+    init_res = client.post("/api/v1/auth/voter/initiate", json={"voter_id": "VTR-2026-00101"})
+    assert init_res.status_code == 200
+    stage_token = init_res.get_json()["stage_token"]
+    assert len(resend_records) == 1
+    first_otp = resend_records[0]
+
+    # 2. Age session by 65s for cooldown
+    with app.app_context():
+        session = VoterOtpSession.query.filter_by(voter_user_id=synthetic_voter, is_verified=False).first()
+        session.created_at = datetime.now(timezone.utc) - timedelta(seconds=65)
+        db.session.commit()
+
+    # 3. Resend OTP
+    resend_res = client.post("/api/v1/auth/voter/resend-otp", json={"stage_token": stage_token})
+    assert resend_res.status_code == 200
+    resend_data = resend_res.get_json()
+    assert resend_data["delivery_mode"] == "sms"
+    assert "otp" not in resend_data
+
+    # 4. New OTP dispatched
+    assert len(resend_records) == 2
+    second_otp = resend_records[1]
+    assert first_otp != second_otp  # New OTP generated
+
+
+def test_otp_delivery_fast2sms_provider_mocked(client, synthetic_voter, monkeypatch):
+    """Verify Fast2SMS provider adapter functions with clean Indian mobile sanitization."""
+    from backend.config import Config
+    from backend.services import otp_delivery
+
+    f2s_calls = []
+
+    def mock_send_fast2sms(to_number, otp, cfg):
+        f2s_calls.append({"to": to_number, "otp": otp, "key": cfg.get("FAST2SMS_API_KEY")})
+        return {"success": True, "provider": "fast2sms", "status": "dispatched"}
+
+    monkeypatch.setattr(Config, "OTP_DELIVERY_MODE", "sms")
+    monkeypatch.setattr(Config, "SMS_PROVIDER", "fast2sms")
+    monkeypatch.setattr(Config, "FAST2SMS_API_KEY", "FAST2SMS_TEST_KEY_123")
+    monkeypatch.setattr(otp_delivery, "_send_fast2sms", mock_send_fast2sms)
+
+    res = client.post("/api/v1/auth/voter/initiate", json={"voter_id": "VTR-2026-00101"})
+    assert res.status_code == 200
+    assert len(f2s_calls) == 1
+    assert f2s_calls[0]["to"] == "+91 98765 43101"
+    assert f2s_calls[0]["key"] == "FAST2SMS_TEST_KEY_123"
+    assert "otp" not in res.get_json()

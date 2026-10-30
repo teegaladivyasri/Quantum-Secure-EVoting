@@ -64,7 +64,7 @@ class Election(db.Model):
     )
     state: Mapped[str] = mapped_column(
         String(100),
-        default="Example State",
+        default="Andhra Pradesh",
         nullable=False
     )
     election_date: Mapped[Optional[date]] = mapped_column(
@@ -160,7 +160,20 @@ class Election(db.Model):
                 assoc.constituency.to_dict() 
                 for assoc in self.constituency_associations 
                 if assoc.constituency
-            ] if self.constituency_associations else []
+            ] if self.constituency_associations else [],
+            "candidates_count": len(self.candidates) if self.candidates else 0,
+            "configuration_status": "COMPLETE" if (
+                self.constituency_associations and all(
+                    any(c.constituency_id == assoc.constituency_id and not c.is_nota for c in (self.candidates or []))
+                    for assoc in self.constituency_associations
+                )
+            ) else "INCOMPLETE",
+            "is_configured": bool(
+                self.constituency_associations and all(
+                    any(c.constituency_id == assoc.constituency_id and not c.is_nota for c in (self.candidates or []))
+                    for assoc in self.constituency_associations
+                )
+            )
         }
 
 from sqlalchemy import event

@@ -31,6 +31,7 @@ export const LoginPage: React.FC = () => {
   const [maskedMobile, setMaskedMobile] = useState('');
   const [otp, setOtp] = useState('');
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [deliveryMode, setDeliveryMode] = useState<'demo' | 'sms'>('demo');
 
   // Camera & prototype identity states
   const [cameraActive, setCameraActive] = useState(false);
@@ -80,15 +81,16 @@ export const LoginPage: React.FC = () => {
           audio: false,
         });
         streamRef.current = stream;
+        setCameraActive(true);
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => {});
+          videoRef.current.play().catch((err) => console.warn('Video play error:', err));
         }
-        setCameraActive(true);
       } else {
         setCameraError(true);
       }
-    } catch {
+    } catch (err) {
+      console.error('Camera access error:', err);
       setCameraError(true);
       setCameraActive(false);
     }
@@ -110,6 +112,16 @@ export const LoginPage: React.FC = () => {
       stopCamera();
     }
   }, [authMode, voterStage]);
+
+  // Ensure stream is bound to video element as soon as it mounts
+  useEffect(() => {
+    if (cameraActive && streamRef.current && videoRef.current) {
+      if (videoRef.current.srcObject !== streamRef.current) {
+        videoRef.current.srcObject = streamRef.current;
+      }
+      videoRef.current.play().catch((err) => console.warn('Video play error:', err));
+    }
+  }, [cameraActive, voterStage]);
 
 
   // Audio instruction helpers (never speaking private codes/tokens)
@@ -162,6 +174,9 @@ export const LoginPage: React.FC = () => {
       const res = await initiateVoterLogin(voterId.trim());
       setStageToken(res.stageToken);
       setMaskedMobile(res.maskedMobile);
+      if (res.deliveryMode) {
+        setDeliveryMode((res.deliveryMode as 'demo' | 'sms') || 'demo');
+      }
       setVoterStage('OTP');
       setResendCooldown(60);
 
@@ -216,6 +231,9 @@ export const LoginPage: React.FC = () => {
       const res = await resendVoterOtp(stageToken);
       setResendCooldown(60);
       if (res.maskedMobile) setMaskedMobile(res.maskedMobile);
+      if (res.deliveryMode) {
+        setDeliveryMode((res.deliveryMode as 'demo' | 'sms') || 'demo');
+      }
     } catch (err: any) {
       const msg = err.response?.data?.message || 'Please wait before requesting another verification code.';
       setError(msg);
@@ -231,15 +249,28 @@ export const LoginPage: React.FC = () => {
 
     let frameData: string | undefined = undefined;
 
-    if (!isFallback && videoRef.current && canvasRef.current) {
+    if (!isFallback) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      canvas.width = video.videoWidth || 320;
-      canvas.height = video.videoHeight || 240;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        frameData = canvas.toDataURL('image/jpeg', 0.8);
+      if (!video || video.videoWidth === 0) {
+        setError(
+          language === 'te'
+            ? 'కెమెరా ప్రివ్యూ ప్రారంభమవుతోంది. దయచేసి మీ ముఖం కనిపించే వరకు వేచి ఉండండి.'
+            : 'Camera preview is starting up. Please wait until your face is clearly visible before capturing.'
+        );
+        setLoading(false);
+        return;
+      }
+      if (canvas) {
+        const width = video.videoWidth;
+        const height = video.videoHeight;
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, width, height);
+          frameData = canvas.toDataURL('image/jpeg', 0.92);
+        }
       }
     }
 
@@ -470,7 +501,7 @@ export const LoginPage: React.FC = () => {
                         className="btn btn-outline"
                         style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem', minHeight: 'auto' }}
                       >
-                        Divya (VTR-2026-00301)
+                        Divya (Bhimili)
                       </button>
                       <button
                         type="button"
@@ -478,7 +509,7 @@ export const LoginPage: React.FC = () => {
                         className="btn btn-outline"
                         style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem', minHeight: 'auto' }}
                       >
-                        Murthy (VTR-2026-00302)
+                        Murthy (Bobbili)
                       </button>
                       <button
                         type="button"
@@ -486,7 +517,7 @@ export const LoginPage: React.FC = () => {
                         className="btn btn-outline"
                         style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem', minHeight: 'auto' }}
                       >
-                        Mahesh (VTR-2026-00303)
+                        Mahesh (Gajuwaka)
                       </button>
                       <button
                         type="button"
@@ -494,7 +525,23 @@ export const LoginPage: React.FC = () => {
                         className="btn btn-outline"
                         style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem', minHeight: 'auto' }}
                       >
-                        Gupta (VTR-2026-00304)
+                        Gupta (Anakapalle)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleFillVoter('VTR-2026-00401')}
+                        className="btn btn-outline"
+                        style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem', minHeight: 'auto' }}
+                      >
+                        Tarun (Visakhapatnam East)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleFillVoter('VTR-2026-00402')}
+                        className="btn btn-outline"
+                        style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem', minHeight: 'auto' }}
+                      >
+                        Aswin (Visakhapatnam North)
                       </button>
                     </div>
                   </div>
@@ -562,18 +609,33 @@ export const LoginPage: React.FC = () => {
                   </p>
                 </div>
 
-                <div style={{
-                  padding: '0.65rem 0.85rem',
-                  borderRadius: '6px',
-                  background: 'rgba(59, 130, 246, 0.08)',
-                  border: '1px solid rgba(59, 130, 246, 0.25)',
-                  fontSize: '0.82rem',
-                  color: 'var(--text-muted)',
-                  marginBottom: '1.5rem',
-                  lineHeight: '1.4'
-                }}>
-                  <strong style={{ color: '#3b82f6' }}>Demo Simulation Notice:</strong> In this academic prototype, the 6-digit verification code has been printed to the backend terminal console.
-                </div>
+                {deliveryMode === 'demo' ? (
+                  <div style={{
+                    padding: '0.65rem 0.85rem',
+                    borderRadius: '6px',
+                    background: 'rgba(59, 130, 246, 0.08)',
+                    border: '1px solid rgba(59, 130, 246, 0.25)',
+                    fontSize: '0.82rem',
+                    color: 'var(--text-muted)',
+                    marginBottom: '1.5rem',
+                    lineHeight: '1.4'
+                  }}>
+                    <strong style={{ color: '#3b82f6' }}>Demo Simulation Notice:</strong> In this academic prototype, the 6-digit verification code has been printed to the backend terminal console.
+                  </div>
+                ) : (
+                  <div style={{
+                    padding: '0.65rem 0.85rem',
+                    borderRadius: '6px',
+                    background: 'rgba(16, 185, 129, 0.08)',
+                    border: '1px solid rgba(16, 185, 129, 0.25)',
+                    fontSize: '0.82rem',
+                    color: 'var(--text-muted)',
+                    marginBottom: '1.5rem',
+                    lineHeight: '1.4'
+                  }}>
+                    <strong style={{ color: '#10b981' }}>SMS Delivery:</strong> A 6-digit verification code has been dispatched via SMS to your registered mobile number.
+                  </div>
+                )}
 
                 <form onSubmit={handleOtpSubmit}>
                   <div className="form-group">
@@ -692,9 +754,9 @@ export const LoginPage: React.FC = () => {
                 <div style={{
                   position: 'relative',
                   width: '100%',
-                  height: '240px',
+                  height: '280px',
                   borderRadius: '12px',
-                  background: '#0f172a',
+                  background: '#090d16',
                   overflow: 'hidden',
                   marginBottom: '1.25rem',
                   border: '1px solid var(--border-glass)',
@@ -702,45 +764,95 @@ export const LoginPage: React.FC = () => {
                   alignItems: 'center',
                   justifyContent: 'center'
                 }}>
+                  {/* Keep video permanently in DOM when in IDENTITY stage so ref is always mounted */}
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      transform: 'scaleX(-1)', // Mirror effect for natural preview
+                      display: cameraActive && !cameraError ? 'block' : 'none'
+                    }}
+                    onLoadedMetadata={() => {
+                      if (videoRef.current) {
+                        videoRef.current.play().catch(() => {});
+                      }
+                    }}
+                  />
+
                   {cameraActive && !cameraError ? (
                     <>
-                      <video
-                        ref={videoRef}
-                        playsInline
-                        muted
-                        style={{
-                          width: '100%',
-                          height: '100%',
-                          objectFit: 'cover',
-                          transform: 'scaleX(-1)' // Mirror effect
-                        }}
-                      />
-                      {/* Biometric Framing Guide */}
+                      {/* Biometric Framing Guide Oval */}
                       <div style={{
                         position: 'absolute',
-                        width: '150px',
-                        height: '180px',
+                        width: '160px',
+                        height: '210px',
                         borderRadius: '50%',
-                        border: '2px dashed var(--color-soft-gold)',
+                        border: '3px solid #38bdf8',
                         boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.45)',
-                        pointerEvents: 'none'
-                      }} />
+                        pointerEvents: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        <div style={{
+                          position: 'absolute',
+                          top: '-13px',
+                          background: '#0284c7',
+                          color: '#ffffff',
+                          fontSize: '0.68rem',
+                          padding: '2px 8px',
+                          borderRadius: '9999px',
+                          fontWeight: 700,
+                          letterSpacing: '0.5px',
+                          textTransform: 'uppercase',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
+                        }}>
+                          Align Face Here
+                        </div>
+                      </div>
                       <div style={{
                         position: 'absolute',
-                        bottom: '10px',
+                        bottom: '12px',
                         fontSize: '0.78rem',
-                        background: 'rgba(0,0,0,0.65)',
-                        color: '#fff',
-                        padding: '0.2rem 0.6rem',
-                        borderRadius: '4px'
+                        background: 'rgba(15, 23, 42, 0.85)',
+                        backdropFilter: 'blur(4px)',
+                        color: '#f8fafc',
+                        padding: '0.3rem 0.75rem',
+                        borderRadius: '20px',
+                        border: '1px solid rgba(255,255,255,0.15)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
                       }}>
+                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} />
                         {t('cameraInstruction')}
                       </div>
                     </>
+                  ) : cameraError ? (
+                    <div style={{ textAlign: 'center', padding: '1.25rem', color: 'var(--text-muted)' }}>
+                      <Camera size={38} style={{ opacity: 0.6, marginBottom: '0.5rem', color: 'var(--color-rose-gold)' }} />
+                      <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{t('cameraAccessDenied')}</div>
+                      <p style={{ fontSize: '0.75rem', marginTop: '0.35rem', maxWidth: '320px' }}>
+                        Unable to access your webcam. Check browser permissions or click below to retry.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={startCamera}
+                        className="btn btn-secondary"
+                        style={{ marginTop: '0.75rem', fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}
+                      >
+                        Retry Camera
+                      </button>
+                    </div>
                   ) : (
-                    <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-muted)' }}>
-                      <Camera size={38} style={{ opacity: 0.5, marginBottom: '0.5rem' }} />
-                      <div style={{ fontSize: '0.85rem' }}>{t('cameraAccessDenied')}</div>
+                    <div style={{ textAlign: 'center', padding: '1.25rem', color: 'var(--text-muted)' }}>
+                      <Camera size={36} style={{ opacity: 0.5, marginBottom: '0.5rem' }} />
+                      <div style={{ fontSize: '0.85rem' }}>Activating optical camera feed...</div>
                     </div>
                   )}
                   <canvas ref={canvasRef} style={{ display: 'none' }} />
@@ -756,7 +868,7 @@ export const LoginPage: React.FC = () => {
                       style={{ width: '100%', fontSize: '1rem', justifyContent: 'center' }}
                     >
                       {loading ? (
-                        <span>{language === 'te' ? 'ధృవీకరిస్తోంది...' : 'Processing Verification...'}</span>
+                        <span>{language === 'te' ? 'ముఖ గుర్తింపు పరిశీలిస్తోంది...' : 'Verifying Face with DeepFace AI...'}</span>
                       ) : (
                         <>
                           <Camera size={18} />
