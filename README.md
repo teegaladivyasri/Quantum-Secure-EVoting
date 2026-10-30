@@ -1,6 +1,6 @@
 # Quantum-Secure Electronic Voting System
 > **Academic & Research Software Prototype**  
-> Combining Qiskit BB84 Quantum Key Distribution Simulation, AES-256-GCM Authenticated Encryption, and Relational Participation Separation.
+> Combining Qiskit BB84 Quantum Key Distribution Simulation, AES-256-GCM Authenticated Encryption, DeepFace Biometric Verification, Multi-Gateway Telephony, and Relational Participation Separation.
 
 ---
 
@@ -11,37 +11,48 @@ This project is a software-based academic research prototype designed to evaluat
 2. **Channel Disturbance Detection & 11% Threshold**: Automated rejection if $QBER > 11\%$ (e.g., under simulated intercept-resend eavesdropping). Observed disturbance causes key-establishment rejection; BB84 does not claim mathematical proof of an attacker.
 3. **BB84 vs. Ballot Encryption Distinction**: BB84 simulates quantum key establishment to provide ephemeral raw key material; **BB84 does not encrypt the ballot**. Actual ballot confidentiality and integrity are provided by AES-256-GCM.
 4. **Direct AES-256-GCM Key Construction**: Selecting exactly 256 usable shared key bits (after QBER estimation sample removal) and packing them directly into a 32-byte AES-256 key with zero intermediate key derivation functions or hashing, protecting ballot payloads with a 96-bit CSPRNG nonce and 128-bit authentication tag.
-5. **Absolute Voter-Ballot Data Separation**: The `ballots` table contains **zero voter identifiers**, zero usernames, and zero cryptographic keys. Participation tracking (`participation_records`) enforces the one-vote-per-election policy separately.
-6. **Civic Accessibility & Inclusion**: Fully bilingual interface (**English and Telugu**), Web Speech API audio guidance, high-contrast touch-friendly controls, and Light/Dark modes adhering to the approved **Navy (`#1F2A44`)**, **Warm Beige (`#E8DCC8`)**, and **Soft Gold (`#C6A75E`)** palette.
+5. **Multi-Stage Voter KYC & Authentication**:
+   - **Stage 1 (Voter ID Lookup):** Validates pre-registered voter records and securely masks registered contact details (`******XXXX`).
+   - **Stage 2 (SMS OTP Verification):** Dispatches one-time verification codes via telephony gateways (TextBee / Fast2SMS) with E.164 number normalization, 60-second cooldown rate-limiting, and single-use session invalidation.
+   - **Stage 3 (Biometric Face Verification):** Real-time webcam frame decoding and facial recognition powered by DeepFace and OpenCV, verifying voters against enrolled portrait records with an accessible demo fallback.
+6. **Dynamic Election & Candidate Management (Andhra Pradesh 2024 Model)**:
+   - Full support for **24 Legislative Assembly Constituencies** across Vizianagaram and Visakhapatnam districts.
+   - **1-Click Official Candidate Loader** (`Load 2024 Candidates`) alongside real-time dynamic manual entry, inline editing, and deletion.
+   - **None of the Above (NOTA)** is strictly enforced and automatically positioned as the final ballot choice.
+7. **Absolute Voter-Ballot Data Separation**: The `ballots` table contains **zero voter identifiers**, zero usernames, and zero cryptographic keys. Participation tracking (`participation_records`) enforces the one-vote-per-election policy separately.
+8. **Civic Accessibility & Inclusion**: Trilingual user interface (**English, Telugu, and Hindi**), Web Speech API audio assistance, high-contrast touch-friendly controls, and seamless Light/Dark themes adhering to the design system.
 
 ---
 
-## 🔒 Integrated Voting Cryptographic Flow
+## 🔒 Integrated Voting & Cryptographic Flow
 
-BB84 is used for quantum key establishment simulation. After successful QBER verification, 256 usable shared bits are directly converted into the 32-byte AES-256 key. AES-256-GCM provides authenticated encryption for the ballot.
-
-The integrated vote-casting pipeline follows this sequential flow:
+The voting system incorporates a multi-tier security lifecycle from voter verification to quantum-encrypted ballot casting:
 
 ```
-Authentication (JWT & Role Verification)
+[VOTER ONBOARDING & MULTI-STAGE KYC]
+Stage 1: Voter ID Lookup (Masked Phone: ******XXXX)
   ↓
-Eligibility (Active Election & Constituency Matching)
+Stage 2: SMS OTP Verification (TextBee / Fast2SMS Gateway + 60s Cooldown)
   ↓
-BB84 key establishment (800-qubit transmission)
+Stage 3: DeepFace Biometric Verification (Live Webcam vs. Enrolled Portrait)
   ↓
-QBER verification (Threshold ≤ 11%; sample bits discarded)
+[EVM BALLOTING & QUANTUM CRYPTOGRAPHY]
+Constituency Ballot Retrieval (Strict Isolation to Voter's Assigned AP Constituency + NOTA)
   ↓
-256 usable BB84 bits (Sifted unrevealed bits)
+BB84 Quantum Key Establishment (800-Qubit Transmission & Basis Sifting)
   ↓
-Direct 32-byte AES-256 key (Direct bit-to-byte conversion)
+QBER Verification (Threshold ≤ 11.0%; Sample Bits Discarded)
   ↓
-AES-256-GCM (Authenticated encryption of candidate_id payload)
+Direct 256 Usable BB84 Bits (Zero Intermediate Classical KDF/Hashing)
   ↓
-Protected ballot (Persisted with zero voter identity linkage)
+Direct 32-Byte AES-256 Key Construction
   ↓
-Participation update (Voter marked as has_voted=True)
+AES-256-GCM Authenticated Encryption (Payload Sealed with 96-bit Nonce & 128-bit MAC Tag)
+  ↓
+Protected Ballot Persisted (Stored with Zero Voter Identity Linkage)
+  ↓
+Participation Record Updated (has_voted=True; Double-Voting Blocked with 409 Conflict)
 ```
-
 
 ---
 
@@ -49,6 +60,8 @@ Participation update (Voter marked as has_voted=True)
 
 - **Frontend**: React 19, TypeScript, Vite, React Router, Lucide Icons, Vanilla CSS Design System with CSS Tokens (Light/Dark themes).
 - **Backend**: Python 3.13, Flask, Flask-Cors, Flask-SQLAlchemy, PyJWT, Bcrypt, Cryptography (PyCA).
+- **Biometrics & Computer Vision**: DeepFace, OpenCV (`cv2`), ONNX Runtime.
+- **Telephony & SMS**: TextBee Android SMS Gateway, Fast2SMS API with E.164 normalization.
 - **Quantum Simulation**: Qiskit 2.5, Qiskit Aer Simulator.
 - **Database**: PostgreSQL (Approved Runtime Architecture via SQLAlchemy ORM). An isolated in-memory SQLite database is used for automated test execution.
 
@@ -69,7 +82,7 @@ $env:PYTHONPATH="."
 python .\seed_demo_data.py
 
 # Start Flask API server on port 5000
-python .\backend\app.py
+python -m backend.app
 ```
 
 The backend REST API will be listening at `http://localhost:5000`.
@@ -92,48 +105,52 @@ Open `http://localhost:5173` in your browser.
 
 ---
 
-## 🧪 Automated Testing & Security Verification
- 
-All 48 security, transactional, cryptographic, and functional test cases can be executed via `pytest`:
+### 3. Run Security & Cryptographic Diagnostic
+
+To verify the BB84 quantum channel, AES-256-GCM AEAD tamper detection, and eavesdropping defense in real time:
 
 ```powershell
-.\backend\venv\Scripts\python.exe -m pytest .\backend\tests -v
+.\backend\venv\Scripts\python.exe .\backend\scripts\security_audit.py
 ```
-
-### Verified Test Matrix:
-- ✅ **Authentication (5 tests)**: Admin login, voter registration, invalid password rejection (401), expired JWT rejection, and RBAC route protection (403 Forbidden).
-- ✅ **BB84 Quantum Simulation & Key Establishment (10 tests)**: 800-qubit transmission, basis sifting, normal sifting ($QBER \le 11\%$), simulated channel disturbance rejection ($QBER \approx 25\%$ raising `QuantumChannelDisturbanceError`), discarding QBER sample bits, yielding $\ge 256$ usable bits, and providing additional attempts if statistical variation causes a round to produce fewer than 256 usable bits.
-- ✅ **Direct AES-256 Key Construction (8 tests)**: Pure bit-to-byte packing of 256 bits into 32 bytes without key derivation functions or SHA-256, rejection of insufficient/invalid bits, and verified absence of KDF from active cryptography.
-- ✅ **AES-256-GCM Integrity**: Round-trip encryption (`{"candidate_id": "..."}` only), 96-bit nonce, 128-bit tag, tampered ciphertext detection (`InvalidTag`), tampered authentication tag detection (`InvalidTag`), and incorrect key rejection.
-- ✅ **Backend Foundation (5 tests)**: App factory, health endpoint, JSON 404 handler, and CORS headers.
-- ✅ **Data Models & Privacy (6 tests)**: User roles/defaults, election-candidate relationships, participation record uniqueness, strict ballot-voter separation, audit log privacy, and PostgreSQL runtime configuration.
-- ✅ **Privacy Guarantees (2 tests)**: Schema verification proving `ballots` table has no `voter_id` column, and audit logs have `user_id == None` with zero candidate disclosure.
-- ✅ **Voting Pipeline Integration (12 tests)**: End-to-end direct BB84 $\to$ AES-256-GCM voting, payload restricted strictly to `candidate_id`, no secret keys in API responses or logs, QBER abort rollback, atomic transaction rollback on failure, single-vote rejection (409 Conflict), concurrent race condition handling via DB uniqueness, constituency enforcement, inactive election rejection, and verification that no KDF exists in the voting service.
 
 ---
 
-## 🎬 Academic Demonstration Script (14 Steps)
+## 🧪 Automated Testing & Security Verification
 
-To initialize demo accounts and run the complete 14-step academic evaluation flow in the terminal:
+All **148 automated test cases** can be executed via `pytest`:
 
 ```powershell
-# 1. Seed demo election, candidates, and demo credentials
-python .\seed_demo_data.py
-
-# 2. Run academic evaluation walkthrough
-.\backend\venv\Scripts\python.exe .\demo_walkthrough.py
+.\backend\venv\Scripts\python.exe -m pytest -v
 ```
+
+### Verified Test Matrix (148 Passing Tests):
+- ✅ **Authentication & KYC Security (23 tests)**: Multi-stage voter initiation, 60s OTP cooldown enforcement, replay attack prevention, session invalidation, and RBAC admin protections.
+- ✅ **Telephony & SMS Delivery (13 tests)**: TextBee API dispatch, Fast2SMS gateway routing, E.164 phone sanitization, and graceful provider fallback.
+- ✅ **Biometric Verification (8 tests)**: DeepFace live frame base64 decoding, reference portrait matching, non-enrolled voter handling, and biometric mismatch rejection.
+- ✅ **BB84 Quantum Simulation & Key Establishment (10 tests)**: 800-qubit transmission, basis sifting, normal sifting ($QBER \le 11\%$), simulated channel disturbance rejection ($QBER \approx 25\%$ raising `QuantumChannelDisturbanceError`), discarding QBER sample bits, yielding $\ge 256$ usable bits, and ephemeral memory management.
+- ✅ **Direct AES-256 Key Construction (8 tests)**: Pure bit-to-byte packing of 256 bits into 32 bytes without intermediate hashing or KDF, rejection of insufficient/invalid bits, and verified absence of KDF from active cryptography.
+- ✅ **AES-256-GCM Integrity (6 tests)**: Round-trip encryption, 96-bit nonce, 128-bit tag, tampered ciphertext detection (`InvalidTag`), tampered authentication tag detection (`InvalidTag`), and incorrect key rejection.
+- ✅ **Security Scenarios & Anti-Tampering (10 tests)**: Concurrent voting race condition handling, ballot tampering resistance matrix, inactive election rejection, and secret material isolation.
+- ✅ **Performance & Timing Benchmarks (11 tests)**: Sub-second BB84 quantum circuit execution, AES-256-GCM throughput, and database transaction timing.
+- ✅ **Andhra Pradesh E2E Election Workflow (2 tests)**: Complete end-to-end simulation across Vizianagaram & Visakhapatnam assembly constituencies, verifying strict candidate isolation, voter ballot casting, and zero candidate-voter linkage.
+- ✅ **Data Models, Multilingual Localization & Privacy (57 tests)**: Multilingual candidate/party/constituency translations (English, Telugu, Hindi), PostgreSQL ORM schemas, and proof that `ballots` has no voter identity columns.
 
 ---
 
 ## 🔑 Demo Credentials (Initialized via `seed_demo_data.py`)
 
-| Role | Username | Password | Constituency | Description |
+> [!NOTE]
+> Registered phone numbers are strictly protected and normalized according to Indian TRAI privacy standards. In the application interface, phone numbers are masked as `******XXXX`.
+
+| Role | Voter ID / Username | Full Name | Assigned AP Constituency | Authentication Flow |
 | :--- | :--- | :--- | :--- | :--- |
-| **Admin** | `admin` | `AdminSecure2026!` | Headquarters | Election Commission Admin (Explicit seed only) |
-| **Voter** | `voter_alice` | `Password123!` | Ward-1 | Registered Voter (Ward-1) |
-| **Voter** | `voter_bob` | `Password123!` | Ward-1 | Registered Voter (Ward-1) |
-| **Voter** | `voter_charlie` | `Password123!` | Ward-2 | Registered Voter (Ward-2) |
+| **Admin** | `admin` | Administrator | Headquarters | Master Password (`AdminSecure2026!`) |
+| **Voter** | `VTR-2026-00301` | Divya | Bhimili | Voter ID $\to$ SMS OTP $\to$ Biometric KYC |
+| **Voter** | `VTR-2026-00302` | Murthy | Bobbili | Voter ID $\to$ SMS OTP $\to$ Biometric KYC |
+| **Voter** | `VTR-2026-00303` | Mahesh | Gajuwaka | Voter ID $\to$ SMS OTP $\to$ Biometric KYC |
+| **Voter** | `VTR-2026-00304` | Gupta | Anakapalle | Voter ID $\to$ SMS OTP $\to$ Biometric KYC |
+| **Voter** | `VTR-2026-00401` | Tarun | Visakhapatnam East | Voter ID $\to$ SMS OTP $\to$ Biometric KYC |
+| **Voter** | `VTR-2026-00402` | Aswin | Visakhapatnam North | Voter ID $\to$ SMS OTP $\to$ Biometric KYC |
 
 ---
 
